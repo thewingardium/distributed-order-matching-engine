@@ -27,6 +27,9 @@ public class OrderControllerSecurityTest {
     @MockBean
     private TradeRepository tradeRepository;
 
+    @MockBean
+    private com.lmax.disruptor.dsl.Disruptor<com.example.dome.engine.disruptor.OrderCommand> disruptor;
+
     @Test
     public void testUnauthorizedAccess() throws Exception {
         mockMvc.perform(get("/api/orderbook/AAPL"))
