@@ -54,9 +54,20 @@ public class PriceLevel {
         return this.orders.peek();
     }
 
+    public void reduceTotalQuantity(long quantity) {
+        if (quantity > 0) {
+            this.totalQuantity.addAndGet(-quantity);
+        }
+    }
+
     public Order poll() {
         Order order = this.orders.poll();
-        if (order != null) {
+        if (order != null && order.getStatus() != com.example.dome.model.OrderStatus.CANCELED) {
+            // Only reduce quantity if NOT cancelled (cancelled orders already reduced totalQuantity)
+            // And if we rely on external reduction for Fills, we must be careful.
+            // If we reduce via reduceTotalQuantity during match, remainingQty decreases simultaneously.
+            // So if remainingQty is 0, we subtract 0. Correct.
+            // If remainingQty > 0 (polled prematurely?), we subtract remainder. Correct.
             this.totalQuantity.addAndGet(-order.getRemainingQuantity());
         }
         return order;

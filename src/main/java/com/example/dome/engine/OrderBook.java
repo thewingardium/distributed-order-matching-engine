@@ -26,6 +26,9 @@ public class OrderBook {
     // Individual PriceLevels are thread-safe for adding orders, but the Map itself needs protection.
     private final ReentrantReadWriteLock lock;
 
+    // Index for O(1) lookup of orders by ID
+    private final Map<UUID, Order> orderIndex = new HashMap<>();
+
     public OrderBook(String symbol) {
         this.symbol = symbol;
         this.bids = new TreeMap<>(Comparator.reverseOrder());
@@ -39,23 +42,8 @@ public class OrderBook {
         }
         
         // Acquire lock to ensure PriceLevel existence or creation
-        lock.readLock().lock();
+        lock.writeLock().lock(); // WRITE lock needed for Index update
         try {
-            PriceLevel level = getPriceLevel(order.getSide(), order.getPrice());
-            if (level != null) {
-                // Determine if we can just add to existing level without write lock
-                // We retrieved it, so we can add to it safely as PriceLevel is concurrent.
-                level.addOrder(order);
-                return;
-            }
-        } finally {
-            lock.readLock().unlock();
-        }
-
-        // If level doesn't exist, we need write lock
-        lock.writeLock().lock();
-        try {
-            // Double check
             PriceLevel level = getPriceLevel(order.getSide(), order.getPrice());
             if (level == null) {
                 level = new PriceLevel(order.getPrice());
@@ -66,6 +54,7 @@ public class OrderBook {
                 }
             }
             level.addOrder(order);
+            orderIndex.put(order.getOrderId(), order);
         } finally {
             lock.writeLock().unlock();
         }
@@ -76,26 +65,45 @@ public class OrderBook {
             throw new IllegalArgumentException("Order symbol mismatch");
         }
         
-        lock.readLock().lock();
+        lock.writeLock().lock(); // WRITE lock for Index removal
         try {
             PriceLevel level = getPriceLevel(order.getSide(), order.getPrice());
             if (level != null) {
                 level.cancelOrder(order);
             }
+            orderIndex.remove(order.getOrderId());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    // Package-private or public accessor if needed
+    public Order getOrder(UUID orderId) {
+        lock.readLock().lock();
+        try {
+            return orderIndex.get(orderId);
         } finally {
             lock.readLock().unlock();
         }
     }
 
     public void modifyOrder(UUID orderId, Order newOrder) {
-        // Modification is usually Cancel + New Order.
-        // We need the original order to cancel it. 
-        // This implies we need an OrderId -> Order index.
-        // We haven't built an OrderId index yet.
-        // For now, we will assume the caller provides the original order or we skip this.
-        // Task requirement: "Implement addOrder, cancelOrder, modifyOrder"
-        // Let's add an Index: Map<UUID, Order> orderIndex.
-        throw new UnsupportedOperationException("Modify requires Order Index lookup - pending implementation");
+        lock.writeLock().lock();
+        try {
+            Order oldOrder = orderIndex.get(orderId);
+            if (oldOrder == null) {
+                throw new IllegalArgumentException("Order not found: " + orderId);
+            }
+            
+            // simple Cancel/Replace (Loss order priority)
+            cancelOrder(oldOrder);
+            addOrder(newOrder);
+            
+            // TODO: In future, if optimization needed (e.g. reduce size keeps priority),
+            // handle here by checking if price is same and size < oldSize.
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     private PriceLevel getPriceLevel(OrderSide side, BigDecimal price) {
@@ -138,6 +146,19 @@ public class OrderBook {
             return snapshot;
         } finally {
             lock.readLock().unlock();
+        }
+    }
+    
+    public void removeLevel(BigDecimal price) {
+        lock.writeLock().lock();
+        try {
+            if (bids.containsKey(price)) {
+                bids.remove(price);
+            } else if (asks.containsKey(price)) {
+                asks.remove(price);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
     

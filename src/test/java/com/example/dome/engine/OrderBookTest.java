@@ -70,6 +70,31 @@ class OrderBookTest {
         // Quantity should be reduced immediately
         assertEquals(0, book.getBestBid().getTotalQuantity());
         assertEquals(OrderStatus.CANCELED, order.getStatus());
+        
+        // Order should be removed from index
+        assertNull(book.getOrder(order.getOrderId()));
+    }
+    
+    @Test
+    void testModifyOrder() {
+        OrderBook book = new OrderBook("TSLA");
+        Order original = createOrder("TSLA", OrderSide.BUY, new BigDecimal("200.00"), 50);
+        
+        book.addOrder(original);
+        assertEquals(50, book.getBestBid().getTotalQuantity());
+        assertNotNull(book.getOrder(original.getOrderId()));
+        
+        // Modify: Reduce size to 20
+        Order newOrder = createOrder("TSLA", OrderSide.BUY, new BigDecimal("200.00"), 20);
+        book.modifyOrder(original.getOrderId(), newOrder);
+        
+        // Verify old is removed/canceled
+        assertNull(book.getOrder(original.getOrderId()));
+        assertEquals(OrderStatus.CANCELED, original.getStatus());
+        
+        // Verify new is added
+        assertNotNull(book.getOrder(newOrder.getOrderId()));
+        assertEquals(20, book.getBestBid().getTotalQuantity());
     }
 
     private Order createOrder(String symbol, OrderSide side, BigDecimal price) {

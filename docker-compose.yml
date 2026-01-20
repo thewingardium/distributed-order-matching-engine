@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  dome-app:
+    build: .
+    image: dome-app:latest
+    container_name: dome-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
+      - SPRING_DATASOURCE_URL=jdbc:h2:mem:domedb
+    depends_on:
+      - redis
+    networks:
+      - dome-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: dome-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - dome-net
+
+networks:
+  dome-net:
+    driver: bridge
